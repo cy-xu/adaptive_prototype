@@ -1,0 +1,35 @@
+<!-- Load TensorFlow.js. This is required to use the qna model. -->
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+
+
+<!-- Load the qna model. -->
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/qna"></script>
+
+
+<!-- Use the script tag to place your code or use an external .js file -->
+
+<script>
+
+  // Define question and answer as simple strings
+
+  var searchText = 'We believe cats are the real stars of YouTube.';
+  var question = 'What is important to YouTube?'; // Cats!
+
+  // Load the model asynchronously using the "then" keyword.
+
+  qna.load().then(model => { 
+
+      // Call model.findAnwers() with the question and passage as parameters
+
+      model.findAnswers(question, searchText).then(answers => {
+
+      console.log('Answers: ', answers);
+
+    });
+
+  });
+
+</script>
+
