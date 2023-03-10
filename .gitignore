@@ -1,3 +1,11 @@
+**/*.pth
+**/*.pt
+**/__pycache__
+**/COCO/
+.DS_Store
+runs
+examples
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
