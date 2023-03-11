@@ -14,8 +14,6 @@ class ViTPose(nn.Module):
         backbone_cfg = {k: v for k, v in cfg['backbone'].items() if k != 'type'}
         head_cfg = {k: v for k, v in cfg['keypoint_head'].items() if k != 'type'}
         
-        breakpoint()
-
         self.backbone = ViT(**backbone_cfg)
         self.keypoint_head = TopdownHeatmapSimpleHead(**head_cfg)
     
