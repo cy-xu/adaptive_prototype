@@ -3,6 +3,7 @@ import os
 import sys
 import pickle
 import random
+import warnings
 
 import cv2
 import json_tricks as json
@@ -157,6 +158,14 @@ class COCODataset(Dataset):
 
             ann_ids = self.coco.getAnnIds(imgIds=imgId, iscrowd=False) # annotation ids
             img = self.coco.loadImgs(imgId)[0] # load img
+
+            # CY: some grayscale images in COCO can cause problem, skip them
+            imgPath = f"{self.root_path}/{self.data_version}/{imgId:012d}.jpg"
+            # open the image with Pillow and check if it is grayscale
+            with Image.open(imgPath) as im:
+                if im.mode == 'L':
+                    print(f"{imgId} is grayscale, convert to RGB...")
+                    continue
 
             if self.use_gt_bboxes:
                 objs = self.coco.loadAnns(ann_ids)
