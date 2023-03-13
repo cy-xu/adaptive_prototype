@@ -14,7 +14,9 @@ from models.optimizer import LayerDecayOptimizer
 from utils.dist_util import get_dist_info, init_dist
 from utils.logging import get_root_logger
 
-
+# work with Mac GPU mps
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+print(f"Using device: {device}")
 
 def train_model(model: nn.Module, datasets: Dataset, cfg: dict, distributed: bool, validate: bool,  timestamp: str, meta: dict) -> None:
     logger = get_root_logger()
@@ -42,7 +44,10 @@ def train_model(model: nn.Module, datasets: Dataset, cfg: dict, distributed: boo
                                         broadcast_buffers=False, 
                                         find_unused_parameters=find_unused_parameters)
     else:
-        model = DataParallel(model, device_ids=cfg.gpu_ids)
+        # model = DataParallel(model, device_ids=cfg.gpu_ids)
+
+        # send model to Mac GPU mps
+        model = model.to(device)
     
     # Loss function
     criterion = JointsMSELoss(use_target_weight=cfg.model['keypoint_head']['loss_keypoint']['use_target_weight'])
@@ -86,6 +91,10 @@ def train_model(model: nn.Module, datasets: Dataset, cfg: dict, distributed: boo
                 layerwise_optimizer.zero_grad()
                 
                 images, targets, target_weights, __ = batch
+                images = images.to(device)
+                targets = targets.to(device)
+                target_weights = target_weights.to(device)
+                
                 outputs = model(images)
                 
                 loss = criterion(outputs, targets, target_weights) # if use_target_weight=True, then criterion(outputs, targets, target_weights)
@@ -99,6 +108,10 @@ def train_model(model: nn.Module, datasets: Dataset, cfg: dict, distributed: boo
                 if global_step < num_warmup_steps:
                     warmup_scheduler.step()
                 global_step += 1
+
+                # print global step every 10 steps
+                if global_step % 10 == 0:
+                    print(f'Global step: {global_step}')
 
             # print epoch loss
             print(f'Epoch loss: {sum(epoch_loss) / len(epoch_loss)}')
