@@ -44,7 +44,7 @@ class JointsMSELoss(nn.Module):
         return loss / num_joints * self.loss_weight
 
 
-@LOSSES.register_module()
+# @LOSSES.register_module()
 class CombinedTargetMSELoss(nn.Module):
     """MSE loss for combined target.
         CombinedTarget: The combination of classification target

@@ -21,10 +21,14 @@ def train_model(model: nn.Module, datasets: Dataset, cfg: dict, distributed: boo
     
     # Prepare data loaders
     datasets = datasets if isinstance(datasets, (list, tuple)) else [datasets]
+
     if distributed:
         samplers = [DistributedSampler(ds, num_replicas=len(cfg.gpu_ids), rank=torch.cuda.current_device(), shuffle=True, drop_last=False) for ds in datasets]
     else:
         samplers = [None for ds in datasets]
+
+    # ToDo: in early stage of IAML, batch_size should adapt to dataset size
+
     dataloaders = [DataLoader(ds, batch_size=cfg.data['samples_per_gpu'], sampler=sampler, num_workers=cfg.data['workers_per_gpu'], pin_memory=False) for ds, sampler in zip(datasets, samplers)]
 
     # put model on gpus
@@ -51,9 +55,10 @@ def train_model(model: nn.Module, datasets: Dataset, cfg: dict, distributed: boo
     lr_mult = [cfg.optimizer['paramwise_cfg']['layer_decay_rate']] * cfg.optimizer['paramwise_cfg']['num_layers']
     layerwise_optimizer = LayerDecayOptimizer(optimizer, lr_mult)
     
-    
+    # ToDo: consider the proper learning rate and milestones
+
     # Learning rate scheduler (MultiStepLR)
-    milestones = cfg.lr_config['Step']
+    milestones = cfg.lr_config['step']
     gamma = 0.1
     scheduler = MultiStepLR(optimizer, milestones, gamma)
 
@@ -67,26 +72,43 @@ def train_model(model: nn.Module, datasets: Dataset, cfg: dict, distributed: boo
     
     model.train()
     global_step = 0
+
+    # actual training loop
+    # ToDo: this should by dynamic 
+
     for dataloader in dataloaders:
-        for epoch in cfg.total_epochs:
-            for batch_idx, batch in dataloader:
+        for epoch in range(cfg.total_epochs):
+            print(f'Epoch {epoch}')
+            epoch_loss = []
+
+            # for batch_idx, batch in dataloader:
+            for batch_idx, batch in enumerate(dataloader):
                 layerwise_optimizer.zero_grad()
                 
                 images, targets, target_weights, __ = batch
                 outputs = model(images)
                 
-                loss = criterion(outputs, targets) # if use_target_weight=True, then criterion(outputs, targets, target_weights)
+                loss = criterion(outputs, targets, target_weights) # if use_target_weight=True, then criterion(outputs, targets, target_weights)
                 loss.backward()
                 clip_grad_norm_(model.parameters(), **cfg.optimizer_config['grad_clip'])
                 layerwise_optimizer.step()
+
+                # add loss to epoch_loss
+                epoch_loss.append(loss.item())
                 
                 if global_step < num_warmup_steps:
                     warmup_scheduler.step()
                 global_step += 1
+
+            # print epoch loss
+            print(f'Epoch loss: {sum(epoch_loss) / len(epoch_loss)}')
+
             scheduler.step()
             
 
     # fp16 setting
+    # ToDo: we should implement fp16 training
+    
     fp16_cfg = cfg.get('fp16', None)
     if fp16_cfg is not None:
         raise NotImplementedError()
