@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import MultiStepLR, LambdaLR
@@ -13,6 +14,7 @@ from models.optimizer import LayerDecayOptimizer
 
 from utils.dist_util import get_dist_info, init_dist
 from utils.logging import get_root_logger
+from utils.top_down_eval import keypoints_from_heatmaps
 
 # work with Mac GPU mps
 device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -112,6 +114,16 @@ def train_model(model: nn.Module, datasets: Dataset, cfg: dict, distributed: boo
                 # print global step every 10 steps
                 if global_step % 10 == 0:
                     print(f'Global step: {global_step}')
+
+                # debug visualization
+                # the VitPose model returns a list of 17 heatmaps, for 17 keypoints
+                heatmaps = outputs.detach().cpu().numpy() # N, 17, h/4, w/4
+
+                # points = heatmap2coords(heatmaps=heatmaps, original_resolution=(org_h, org_w))
+                points, prob = keypoints_from_heatmaps(heatmaps=heatmaps, center=np.array([[org_w//2, org_h//2]]), scale=np.array([[org_w, org_h]]),
+                                                    unbiased=True, use_udp=True)
+                points = np.concatenate([points[:, :, ::-1], prob], axis=2)
+
 
             # print epoch loss
             print(f'Epoch loss: {sum(epoch_loss) / len(epoch_loss)}')
