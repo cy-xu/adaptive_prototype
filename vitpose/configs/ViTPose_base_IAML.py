@@ -3,6 +3,9 @@
 #     '../../../../_base_/datasets/coco.py'
 # ]
 evaluation = dict(interval=10, metric='mAP', save_best='AP')
+gpu_ids = [0]
+seed = 0
+deterministic = True
 
 optimizer = dict(type='AdamW',
                  lr=5e-4, 
@@ -144,17 +147,17 @@ val_pipeline = [
 
 test_pipeline = val_pipeline
 
-data_root = 'datasets/coco'
+data_root = 'datasets/vertical_baby_shark'
 data_version = "val2017"
 
 data = dict(
-    samples_per_gpu=64,
-    workers_per_gpu=4,
+    samples_per_gpu=32,
+    workers_per_gpu=1,
     val_dataloader=dict(samples_per_gpu=32),
     test_dataloader=dict(samples_per_gpu=32),
     train=dict(
         type='TopDownCocoDataset',
-        ann_file=f'{data_root}/annotations/person_keypoints_val2017.json',
+        ann_file=f'{data_root}/annotations/dataset.json',
         img_prefix=f'{data_root}/val2017/',
         data_cfg=data_cfg,
         pipeline=train_pipeline),
