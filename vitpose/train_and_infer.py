@@ -18,7 +18,7 @@ from torchvision.transforms import transforms
 from models.losses import JointsMSELoss
 from models.optimizer import LayerDecayOptimizer
 from datasets.COCO import COCODataset
-import configs.ViTPose_base_IAML as cfg
+import configs.ViTPose_base_IAML as iaml_cfg
 
 from utils.util import init_random_seed, set_random_seed
 from utils.dist_util import get_dist_info, init_dist
@@ -29,6 +29,8 @@ from utils.visualization import draw_points_and_skeleton, joints_dict
 
 def train_process(model, device, event, interval):
     print(f">>> Entered train_process function")
+
+    cfg = iaml_cfg
 
     # Set dataset
     dataset = COCODataset(root_path=cfg.data_root, 
@@ -47,7 +49,7 @@ def train_process(model, device, event, interval):
                            heatmap_sigma=3, 
                            soft_nms=False)
     
-    logger = get_root_logger()
+    # logger = get_root_logger()
     
     # Prepare data loaders
     # datasets = datasets if isinstance(datasets, (list, tuple)) else [datasets]
@@ -90,6 +92,7 @@ def train_process(model, device, event, interval):
     # wait for the event to start training
     # while not event.wait(interval):
     while global_step < 1000:
+
         for epoch in range(cfg.total_epochs):
             print(f'Epoch {epoch}')
             epoch_loss = []
@@ -114,8 +117,9 @@ def train_process(model, device, event, interval):
                 epoch_loss.append(loss.item())
                 
                 # print global step every 10 steps
-                if global_step % 10 == 0:
-                    print(f'Batch: {batch_idx}, Global step: {global_step}')
+                pid = os.getpid()
+                if global_step % 3 == 0:
+                    print(f'Batch: {batch_idx}, Loss: {round(loss.item(), 8)}, Global step: {global_step}, PID: {pid}')
 
                 if global_step < num_warmup_steps:
                     warmup_scheduler.step()
@@ -127,7 +131,7 @@ def train_process(model, device, event, interval):
             scheduler.step()
             
             # Write the new state of the model to shared memory
-            model[:] = model.state_dict()
+            # model[:] = model.state_dict()
 
     # fp16 setting
     # ToDo: we should implement fp16 training
@@ -138,52 +142,62 @@ def train_process(model, device, event, interval):
     
 
 # @torch.no_grad()
-def inference_video(model, device, vid_path):
+def inference_video(model, vid_queue, cam_queue, device):
     print(f">>> Entered inference_video function")
-    
-    # create the dataset directory to save the frames and the json file
-    dataset_dir = vid_path.replace(".mp4", "")
-    os.makedirs(dataset_dir, exist_ok=True)
-    
-    # Prepare input data
-    # read every frame from the video at vid_path
-    vid = cv2.VideoCapture(vid_path)
-    if not vid.isOpened():
-        raise IOError(f"Couldn't open video: {vid_path}")
 
-    # get the image size of the video
-    org_w, org_h = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH)), int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    # get framerate of the video
-    fps = vid.get(cv2.CAP_PROP_FPS)
+    # Create a window to show both videos
+    # cv2.namedWindow('Double Video', cv2.WINDOW_NORMAL)
+    cv2.namedWindow('window', cv2.WINDOW_AUTOSIZE)
+    # cv2.CV_WINDOW_AUTOSIZE
+
+    cfg = iaml_cfg.data_cfg
 
     img_size = cfg['image_size']
-    print(f">>> Original image size: {org_h} X {org_w} (height X width)")
-    print(f">>> Resized image size: {img_size[1]} X {img_size[0]} (height X width)")
-    print(f">>> Scale change: {org_h/img_size[1]}, {org_w/img_size[0]}")
+    img_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    transforms.Resize((img_size[1], img_size[0])),
+    ])
 
-    #  a for loop to read every frame from the video
-    # tic = time()
-    # start_frame = int(start_t * fps)
-    # frame_count = start_frame
-    # stop_frame = int(stop_t * fps)
-    # vid.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    # Initialize the position and size of the window
+    # cv2.moveWindow('Double Video', 0, 0)
+    # cv2.resizeWindow('Double Video', org_w*2, org_h)
 
     while True:
-        ret, frame = vid.read()
-        print(f">>> Processing frame {frame_count} ...", end='\r')
-        if not ret: break
 
-        img_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            transforms.Resize((img_size[1], img_size[0])),
-            ])
-        
-        img_tensor = img_transform(frame).unsqueeze(0).to(device)
+        if not vid_queue.empty():
+            vid_frame = vid_queue.get()
+
+        if not cam_queue.empty():
+            cam_frame = cam_queue.get()
+            org_h, org_w, _ = cam_frame.shape
+
+        # if frame is None:
+        #     break
+
+        # org_h, org_w, _ = vid_frame.shape
+
+        # img_size = cfg['image_size']
+        # print(f">>> Original image size: {org_h} X {org_w} (height X width)")
+        # print(f">>> Resized image size: {img_size[1]} X {img_size[0]} (height X width)")
+        # print(f">>> Scale change: {org_h/img_size[1]}, {org_w/img_size[0]}")
+
+        #  a for loop to read every frame from the video
+        # tic = time()
+        # start_frame = int(start_t * fps)
+        # frame_count = start_frame
+        # stop_frame = int(stop_t * fps)
+        # vid.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
         
         # Feed to model
         # the VitPose model returns a list of 17 heatmaps, for 17 keypoints
-        heatmaps = model(img_tensor).detach().cpu().numpy() # N, 17, h/4, w/4
+        # no grad
+        with torch.no_grad():
+            # img_tensor = img_transform(vid_frame).unsqueeze(0).to(device)
+            img_tensor = img_transform(cam_frame).unsqueeze(0).to(device)
+
+            heatmaps = model(img_tensor).detach().cpu().numpy() # N, 17, h/4, w/4
 
         # points = heatmap2coords(heatmaps=heatmaps, original_resolution=(org_h, org_w))
         points, prob = keypoints_from_heatmaps(heatmaps=heatmaps, center=np.array([[org_w//2, org_h//2]]), scale=np.array([[org_w, org_h]]), unbiased=True, use_udp=True)
@@ -191,21 +205,28 @@ def inference_video(model, device, vid_path):
 
         # collect all frames, draw the keypoints and save the video
         for pid, point in enumerate(points_confidence):
-            img = np.array(img) # Pillow read img as RGB, cv2 read img as BGR
+            # img = np.array(img) # Pillow read img as RGB, cv2 read img as BGR
             # (Pdb) img.shape (1440, 1080, 3)
             # (Pdb) points_confidence.shape (1, 17, 3)
             # (Pdb) point.shape (17, 3)
 
             #[:, :, ::-1] # RGB to BGR for cv2 modules
-            img = draw_points_and_skeleton(img.copy(), point, joints_dict()['coco']['skeleton'], person_index=pid,
-                                           points_color_palette='gist_rainbow', skeleton_color_palette='jet',
-                                           points_palette_samples=10, confidence_threshold=0.4)
-        
-        frame_count += 1
+            img_keypoints = draw_points_and_skeleton(cam_frame.copy(), point, joints_dict()['coco']['skeleton'], person_index=pid,
+                                            points_color_palette='gist_rainbow', skeleton_color_palette='jet',
+                                            points_palette_samples=10, confidence_threshold=0.4)
+
+        # combine the original image and the image with keypoints
+        frame_img = cv2.hconcat([img_keypoints, vid_frame])
+
+        pid = os.getpid()
+        # print(f'>>> Process {pid} is processing frame {frame_count} ...', end='\r')
 
         # pop a window to show the image and refresh the window
-        cv2.imshow('img', img)
-        # cv2.waitKey(1)
+        cv2.imshow('window', frame_img)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cv2.destroyAllWindows()
 
     # elapsed_time = time()-tic
     # print(f">>> Output size: {heatmaps.shape} ---> {elapsed_time:.4f} sec. elapsed [{elapsed_time**-1: .1f} fps]\n")    

@@ -1,9 +1,12 @@
 import os
+import time
+import cv2
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.multiprocessing as mp
+from torch.multiprocessing import Queue
 
 from models.model import ViTPose
 from train_and_infer import train_process, inference_video
@@ -71,7 +74,9 @@ if __name__ == '__main__':
     mp.set_start_method('spawn', force=True)
     event = mp.Event()
     interval = 5
-
+    vid_queue = Queue()
+    cam_queue = Queue()
+    
     # Create and load the model
     model = ViTPose(cfg.model)
     model.load_state_dict(torch.load(CKPT_PATH)['state_dict'])
@@ -82,18 +87,61 @@ if __name__ == '__main__':
     model.share_memory()
 
     processes = []
-    p_inference = mp.Process(target=inference_video, args=(model, video_path, device))
+    p_inference = mp.Process(target=inference_video, args=(model, vid_queue, cam_queue, device))
     p_training = mp.Process(target=train_process, args=(model, device, event, interval))
 
     # Start the inference and training processes
     # p_inference = mp.Process(target=inference_video, args=(model, video_path, cfg))
     # p_training = mp.Process(target=train_process, args=(model, cfg))
 
-    p_inference.start()
-    processes.append(p_inference)
+    # read every frame from the video at vid_path
+    vid = cv2.VideoCapture(video_path)
+    if not vid.isOpened(): raise IOError(f"Couldn't open video: {video_path}")
+
+    # get the image size of the video
+    org_w, org_h = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH)), int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    # get framerate of the video
+    fps = vid.get(cv2.CAP_PROP_FPS)
+    # calculate per frame interval based on the framerate
+    f_interval = 0.1 # 1/fps
+    frame_count = 0
+
+    # Open the webcam
+    webcam = cv2.VideoCapture(0)
+
+    # confirm that the webcam is open before starting the processes
+    cam_ret, cam_frame = webcam.read()
+    if not cam_ret: raise IOError(f"Couldn't open webcam")
 
     p_training.start()
     processes.append(p_training)
+
+    p_inference.start()
+    processes.append(p_inference)
+
+    while True:
+        vid_ret, vid_frame = vid.read()
+        cam_ret, cam_frame = webcam.read()
+
+        # the webcam frame is larger and wider than the video frame
+        # first resize the webcam frame to height org_h but maintain its ratio
+        # then crop the webcam frame to the same width as the video frame
+        if cam_ret:
+            # resize webcam frame to org_h
+            cam_frame = cv2.resize(cam_frame, (int(org_h*cam_frame.shape[1]/cam_frame.shape[0]), org_h))
+            # crop webcam frame to org_w
+            cam_frame = cam_frame[:, int((cam_frame.shape[1]-org_w)/2):int((cam_frame.shape[1]+org_w)/2)]
+            
+        print(f">>> Processing frame {frame_count} ...", end='\r')
+        if not (vid_ret and cam_ret): break
+
+        vid_queue.put(vid_frame)
+        cam_queue.put(cam_frame)
+        time.sleep(f_interval)
+
+        frame_count += 1
+
+    vid_queue.put(None)
 
     for p in processes:
         p.join()
