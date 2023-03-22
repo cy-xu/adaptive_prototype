@@ -27,7 +27,7 @@ from utils.logging import get_root_logger
 from utils.top_down_eval import keypoints_from_heatmaps
 from utils.visualization import draw_points_and_skeleton, joints_dict
 
-def train_process(model, device, event, interval):
+def train_process(model, device, event, interval, lock):
     print(f">>> Entered train_process function")
 
     cfg = iaml_cfg
@@ -97,6 +97,8 @@ def train_process(model, device, event, interval):
             print(f'Epoch {epoch}')
             epoch_loss = []
 
+            # lock.acquire()
+
             # for batch_idx, batch in dataloader:
             for batch_idx, batch in enumerate(dataloader):
                 layerwise_optimizer.zero_grad()
@@ -133,6 +135,8 @@ def train_process(model, device, event, interval):
             # Write the new state of the model to shared memory
             # model[:] = model.state_dict()
 
+            # lock.release()
+
     # fp16 setting
     # ToDo: we should implement fp16 training
     
@@ -142,7 +146,7 @@ def train_process(model, device, event, interval):
     
 
 # @torch.no_grad()
-def inference_video(model, vid_queue, cam_queue, device):
+def inference_video(model, vid_queue, cam_queue, device, lock):
     print(f">>> Entered inference_video function")
 
     # Create a window to show both videos
@@ -189,7 +193,8 @@ def inference_video(model, vid_queue, cam_queue, device):
         # stop_frame = int(stop_t * fps)
         # vid.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
-        
+        # lock.acquire()
+
         # Feed to model
         # the VitPose model returns a list of 17 heatmaps, for 17 keypoints
         # no grad
@@ -225,6 +230,8 @@ def inference_video(model, vid_queue, cam_queue, device):
         cv2.imshow('window', frame_img)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+
+        # lock.release()
 
     cv2.destroyAllWindows()
 
