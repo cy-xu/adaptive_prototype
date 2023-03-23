@@ -3,6 +3,7 @@ import os
 import sys
 import pickle
 import random
+import warnings
 
 import cv2
 import json_tricks as json
@@ -13,7 +14,8 @@ import torchvision.transforms.functional as F
 from tqdm import tqdm
 from PIL import Image
 
-from .HumanPoseEstimation import HumanPoseEstimationDataset as Dataset
+from torch.utils.data import Dataset
+# from .HumanPoseEstimation import HumanPoseEstimationDataset as Dataset
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from utils.transform import fliplr_joints, affine_transform, get_affine_transform
@@ -102,6 +104,7 @@ class COCODataset(Dataset):
         self.image_size = (image_width, image_height)
         self.aspect_ratio = image_width * 1.0 / image_height
         
+        # COCO's heatmap is only 1/4 of the image size
         self.heatmap_size = (int(image_width / 4), int(image_height / 4))
         self.heatmap_type = 'gaussian'
         self.pixel_std = 200  # I don't understand the meaning of pixel_std (=200) in the original implementation
@@ -155,6 +158,14 @@ class COCODataset(Dataset):
 
             ann_ids = self.coco.getAnnIds(imgIds=imgId, iscrowd=False) # annotation ids
             img = self.coco.loadImgs(imgId)[0] # load img
+
+            # CY: some grayscale images in COCO can cause problem, skip them
+            imgPath = f"{self.root_path}/{self.data_version}/{imgId:012d}.jpg"
+            # open the image with Pillow and check if it is grayscale
+            with Image.open(imgPath) as im:
+                if im.mode == 'L':
+                    print(f"{imgId} is grayscale, convert to RGB...")
+                    continue
 
             if self.use_gt_bboxes:
                 objs = self.coco.loadAnns(ann_ids)
@@ -262,6 +273,9 @@ class COCODataset(Dataset):
 
         # Apply data augmentation
         if self.is_train:
+
+            # ToDo: consider no augmentation in early stages of adaptive learning
+
             if self.half_body_prob and random.random() < self.half_body_prob and np.sum(joints_vis[:, 0]) > self.num_joints_half_body:
                 c_half_body, s_half_body = self._half_body_transform(joints, joints_vis)
 
@@ -498,14 +512,20 @@ class COCODataset(Dataset):
 
 if __name__ == '__main__':
     # from skimage import io
-    coco = COCODataset(root_path=f"{os.path.dirname(__file__)}/COCO", data_version="traincoex", rotate_prob=0., half_body_prob=0.)
+    # coco = COCODataset(root_path=f"{os.path.dirname(__file__)}/COCO", data_version="traincoex", rotate_prob=0., half_body_prob=0.)
+
+    # switch to small validation set for local test
+    coco = COCODataset(root_path=f"{os.path.dirname(__file__)}/COCO", data_version="val2017", rotate_prob=0., half_body_prob=0.)
     item = coco[1]
+    
+    breakpoint()
     # io.imsave("tmp.jpg", item[0].permute(1,2,0).numpy())
     print()
     print(item[1].shape)
     print('ok!!')
-    # img = np.clip(np.transpose(item[0].numpy(), (1, 2, 0))[:, :, ::-1] * np.asarray([0.229, 0.224, 0.225]) +
-    #     np.asarray([0.485, 0.456, 0.406]), 0, 1) * 255
-    # cv2.imwrite('./tmp.png', img.astype(np.uint8))
-    # print(item[-1])
+
+    img = np.clip(np.transpose(item[0].numpy(), (1, 2, 0))[:, :, ::-1] * np.asarray([0.229, 0.224, 0.225]) +
+        np.asarray([0.485, 0.456, 0.406]), 0, 1) * 255
+    cv2.imwrite('./tmp.png', img.astype(np.uint8))
+    print(item[-1])
     pass

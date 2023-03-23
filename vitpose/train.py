@@ -7,6 +7,8 @@ import time
 import warnings
 import click
 import yaml
+import pretty_errors
+
 
 import torch
 import torch.distributed as dist
@@ -18,6 +20,7 @@ from utils.logging import get_root_logger
 import configs.ViTPose_base_coco_256x192 as b_cfg
 import configs.ViTPose_large_coco_256x192 as l_cfg
 import configs.ViTPose_huge_coco_256x192 as h_cfg
+import configs.ViTPose_base_IAML as b_iaml_cfg
 
 from models.model import ViTPose
 from datasets.COCO import COCODataset
@@ -26,13 +29,15 @@ from utils.train_valid_fn import train_model
 CUR_PATH = osp.dirname(__file__)
 
 @click.command()
-@click.option('--config-path', type=click.Path(exists=True), default='config.yaml', required=True, help='train config file path')
-@click.option('--model-name', type=str, default='b', required=True, help='[b: ViT-B, l: ViT-L, h: ViT-H]')
+@click.option('--config-path', type=click.Path(exists=True), default='config.yaml', required=False, help='train config file path')
+@click.option('--model-name', type=str, default='iaml', required=False, help='[b: ViT-B, l: ViT-L, h: ViT-H, iaml: IAML-B]')
+
 def main(config_path, model_name):
         
     cfg = {'b':b_cfg,
            'l':l_cfg,
-           'h':h_cfg}.get(model_name.lower())
+           'h':h_cfg,
+           'iaml': b_iaml_cfg}.get(model_name.lower())
     
     # Load config.yaml
     with open(config_path, 'r') as f:
@@ -40,6 +45,7 @@ def main(config_path, model_name):
     for k, v in cfg_yaml.items():
         cfg.__setattr__(k, v)
     
+
     # set cudnn_benchmark
     if cfg.cudnn_benchmark:
         torch.backends.cudnn.benchmark = True
@@ -95,7 +101,7 @@ def main(config_path, model_name):
     
     # Set dataset
     datasets = COCODataset(root_path=cfg.data_root, 
-                           data_version="train2017",
+                           data_version=cfg.data_version,
                            is_train=True, 
                            use_gt_bboxes=True,
                            image_width=192, 
