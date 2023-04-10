@@ -14,7 +14,6 @@ from torch.nn.utils import clip_grad_norm_
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import MultiStepLR, LambdaLR
 
-import tensorboardX
 from torch.utils.tensorboard import SummaryWriter
 
 from models.model import ViTPose
