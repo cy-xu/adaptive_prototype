@@ -8,3 +8,7 @@ torch
 torchvision
 easydict
 pretty_errors
+tensorboard
+json_tricks
+pycocotools
+tqdm

@@ -123,8 +123,6 @@ def main():
     # init distributed env first, since logger depends on the dist info.
     distributed = False
 
-    cv2.namedWindow('window', cv2.WINDOW_AUTOSIZE)
-
     # Create and load the model
     model_student = ViTPose(student_cfg.model)
     # model_student.load_state_dict(torch.load(student_checkpoint)['state_dict'])
@@ -294,8 +292,6 @@ def main():
                 # also save the image to disk
                 os.makedirs('./debug', exist_ok=True)
                 cv2.imwrite(f'./debug/{global_step}.jpg', keypoints_and_heatmaps)
-                # show the image in opencv window
-                cv2.imshow('keypoints', keypoints_and_heatmaps)
 
                 # before sending to tensorboard, permute the array to (C, H, W)
                 # revert the RGB to BGR for tensorboard visualization
