@@ -44,29 +44,54 @@ def fliplr_joints(joints, joints_vis, width, matched_parts):
 
 
 def get_affine_transform(center, scale, pixel_std, rot, output_size, shift=np.array([0, 0], dtype=np.float32), inv=0):
+    """Get the affine transform matrix, given the center/scale/rot/output_size.
+
+    Args:
+        center (np.ndarray[2, ]): Center of the bounding box (x, y).
+        scale (np.ndarray[2, ]): Scale of the bounding box
+            wrt [width, height].
+        rot (float): Rotation angle (degree).
+        output_size (np.ndarray[2, ] | list(2,)): Size of the
+            destination heatmaps.
+        shift (0-100%): Shift translation ratio wrt the width/height.
+            Default (0., 0.).
+        inv (bool): Option to inverse the affine transform direction.
+            (inv=False: src->dst or inv=True: dst->src)
+
+    Returns:
+        np.ndarray: The transform matrix.
+    """
+    # Convert scale to an array if a single value is given
     if not isinstance(scale, np.ndarray) and not isinstance(scale, list):
-        print(scale)
+        print("converting scale to list", scale)
         scale = np.array([scale, scale])
 
+    # Calculate source width based on scale and pixel_std constant
     scale_tmp = scale * 1.0 * pixel_std  # It was scale_tmp = scale * 200.0
     src_w = scale_tmp[0]
     dst_w = output_size[0]
     dst_h = output_size[1]
 
+    # Convert rotation angle from degrees to radians
     rot_rad = np.pi * rot / 180
     src_dir = get_dir([0, src_w * -0.5], rot_rad)
     dst_dir = np.array([0, dst_w * -0.5], np.float32)
 
+    # Initialize source and destination coordinate matrices
     src = np.zeros((3, 2), dtype=np.float32)
     dst = np.zeros((3, 2), dtype=np.float32)
+    
+    # Calculate the coordinates of the first two points for both source and destination
     src[0, :] = center + scale_tmp * shift
     src[1, :] = center + src_dir + scale_tmp * shift
     dst[0, :] = [dst_w * 0.5, dst_h * 0.5]
     dst[1, :] = np.array([dst_w * 0.5, dst_h * 0.5]) + dst_dir
 
+    # Calculate the coordinates of the third point for both source and destination
     src[2:, :] = get_3rd_point(src[0, :], src[1, :])
     dst[2:, :] = get_3rd_point(dst[0, :], dst[1, :])
 
+    # Compute the affine transformation matrix based on the given points
     if inv:
         trans = cv2.getAffineTransform(np.float32(dst), np.float32(src))
     else:

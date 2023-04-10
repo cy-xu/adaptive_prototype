@@ -1,30 +1,18 @@
-# _base_ = [
-#     '../../../../_base_/default_runtime.py',
-#     '../../../../_base_/datasets/coco.py'
-# ]
-evaluation = dict(interval=10, metric='mAP', save_best='AP')
-gpu_ids = [0]
-seed = 0
-deterministic = True
-
-# data_root = 'datasets/camera_dataset'
 data_root = 'datasets/coco'
-data_version = "val2017"
-data_json = f"{data_root}/annotations/person_keypoints_{data_version}.json"
+# data_root = 'datasets/vertical_baby_shark'
 
-checkpoint = f"{data_root}/vitpose-b-camera.pth"
-total_epochs = 1000
-target_type = 'GaussianHeatmap'
+_base_ = [
+    '../../../../_base_/default_runtime.py',
+    '../../../../_base_/datasets/coco.py'
+]
 
-optimizer = dict(type='AdamW',
-                 lr=5e-4,
-                 betas=(0.9, 0.999),
-                 weight_decay=0.1,
+evaluation = dict(interval=10, metric='mAP', save_best='AP')
+
+optimizer = dict(type='AdamW', lr=5e-4, betas=(0.9, 0.999), weight_decay=0.1,
                  constructor='LayerDecayOptimizerConstructor', 
-                 autoscale_lr=True,
                  paramwise_cfg=dict(
                                     num_layers=12, 
-                                    layer_decay_rate=0.75,
+                                    layer_decay_rate=0.8,
                                     custom_keys={
                                             'bias': dict(decay_multi=0.),
                                             'pos_embed': dict(decay_mult=0.),
@@ -43,7 +31,8 @@ lr_config = dict(
     warmup_iters=500,
     warmup_ratio=0.001,
     step=[170, 200])
-
+total_epochs = 210
+target_type = 'GaussianHeatmap'
 channel_cfg = dict(
     num_output_channels=17,
     dataset_joints=17,
@@ -62,18 +51,18 @@ model = dict(
         type='ViT',
         img_size=(256, 192),
         patch_size=16,
-        embed_dim=768,
+        embed_dim=384,
         depth=12,
         num_heads=12,
         ratio=1,
         use_checkpoint=False,
         mlp_ratio=4,
         qkv_bias=True,
-        drop_path_rate=0.3,
+        drop_path_rate=0.1,
     ),
     keypoint_head=dict(
         type='TopdownHeatmapSimpleHead',
-        in_channels=768,
+        in_channels=384,
         num_deconv_layers=2,
         num_deconv_filters=(256, 256),
         num_deconv_kernels=(4, 4),
@@ -153,6 +142,8 @@ val_pipeline = [
 ]
 
 test_pipeline = val_pipeline
+data_version = "val2017"
+
 
 data = dict(
     samples_per_gpu=64,
@@ -161,21 +152,24 @@ data = dict(
     test_dataloader=dict(samples_per_gpu=32),
     train=dict(
         type='TopDownCocoDataset',
-        ann_file=f'{data_root}/annotations/dataset.json',
+        ann_file=f'{data_root}/annotations/person_keypoints_val2017.json',
         img_prefix=f'{data_root}/val2017/',
         data_cfg=data_cfg,
-        pipeline=train_pipeline),
+        pipeline=train_pipeline,
+        ),
     val=dict(
         type='TopDownCocoDataset',
         ann_file=f'{data_root}/annotations/person_keypoints_val2017.json',
         img_prefix=f'{data_root}/val2017/',
         data_cfg=data_cfg,
-        pipeline=val_pipeline),
+        pipeline=val_pipeline,
+        ),
     test=dict(
         type='TopDownCocoDataset',
         ann_file=f'{data_root}/annotations/person_keypoints_val2017.json',
         img_prefix=f'{data_root}/val2017/',
         data_cfg=data_cfg,
-        pipeline=test_pipeline)
+        pipeline=test_pipeline,
+        ),
 )
 

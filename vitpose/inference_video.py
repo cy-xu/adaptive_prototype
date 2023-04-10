@@ -72,14 +72,22 @@ def inference_video(vid_path: Path, start_t: int, stop_t: int, img_size: tuple[i
         if not ret or frame_count > stop_frame:
             break
 
-        img = Image.fromarray(frame)
+        # img = Image.fromarray(frame)
+        # img = frame
 
         imgPath = f"{dataset_dir}/{frame_count:012d}.jpg"
         if save_result:
             cv2.imwrite(imgPath, frame)
 
         # img = Image.open(vid_path)
-        img_tensor = transforms.Compose ([transforms.Resize((img_size[1], img_size[0])), transforms.ToTensor()])(img).unsqueeze(0).to(device)
+        
+        img_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.Resize((img_size[1], img_size[0])),
+            ])
+        
+        img_tensor = img_transform(frame).unsqueeze(0).to(device)
         
         # Feed to model
         # the VitPose model returns a list of 17 heatmaps, for 17 keypoints
@@ -88,6 +96,8 @@ def inference_video(vid_path: Path, start_t: int, stop_t: int, img_size: tuple[i
         # points = heatmap2coords(heatmaps=heatmaps, original_resolution=(org_h, org_w))
         points, prob = keypoints_from_heatmaps(heatmaps=heatmaps, center=np.array([[org_w//2, org_h//2]]), scale=np.array([[org_w, org_h]]), unbiased=True, use_udp=True)
         points_confidence = np.concatenate([points[:, :, ::-1], prob], axis=2)
+
+        breakpoint()
 
         # post process the keypoints by adding COCO visibility flag, the output is 17*3 (x1, y1, v1, ...)
         # https://cocodataset.org/#format-results
@@ -113,16 +123,22 @@ def inference_video(vid_path: Path, start_t: int, stop_t: int, img_size: tuple[i
             "keypoints": points_coco,
             "score": 1,
             "id": frame_count,
-            "bbox": [org_w//2,org_h//2,org_w,org_h],
+            "bbox": [0, 0, org_w, org_h],
             "area": org_w*org_h,
         }
         anno_json['images'].append(img_info)
         anno_json['annotations'].append(anno_info)
 
 
+        # breakpoint()
+
         # collect all frames, draw the keypoints and save the video
         for pid, point in enumerate(points_confidence):
             img = np.array(img) # Pillow read img as RGB, cv2 read img as BGR
+            # (Pdb) img.shape (1440, 1080, 3)
+            # (Pdb) points_confidence.shape (1, 17, 3)
+            # (Pdb) point.shape (17, 3)
+
             #[:, :, ::-1] # RGB to BGR for cv2 modules
             img = draw_points_and_skeleton(img.copy(), point, joints_dict()['coco']['skeleton'], person_index=pid,
                                            points_color_palette='gist_rainbow', skeleton_color_palette='jet',
@@ -157,7 +173,7 @@ if __name__ == "__main__":
     # from configs.ViTPose_base_coco_256x192 import model as model_cfg
     # from configs.ViTPose_base_coco_256x192 import data_cfg
 
-    from configs.ViTPose_huge_coco_256x192 import model as model_cfg
+    from configs.ViTPose_huge_coco_256x192 import model as teacher_cfg
     from configs.ViTPose_huge_coco_256x192 import data_cfg
 
     # work with Mac GPU mps
@@ -166,7 +182,7 @@ if __name__ == "__main__":
     print(f"Using device: {device}")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--video-path', nargs='+', type=str, default='examples/vertical_chinese_calisthenics.mp4', help='video path')
+    parser.add_argument('--video-path', nargs='+', type=str, default='examples/baby_shark_pinkfong_vertical.mp4', help='video path')
     args = parser.parse_args()
     
     CUR_DIR = os.path.dirname(__file__)
@@ -174,7 +190,7 @@ if __name__ == "__main__":
     CKPT_PATH = f"{CUR_DIR}/vitpose-h-multi-coco.pth"
     
     img_size = data_cfg['image_size']
-    t0, t1 = 10, 20
+    t0, t1 = 0, 20
 
     print(args.video_path)
-    keypoints, frames = inference_video(vid_path=args.video_path, start_t=t0, stop_t=t1, img_size=img_size, model_cfg=model_cfg, ckpt_path=CKPT_PATH, device=device, save_result=True)
+    keypoints, frames = inference_video(vid_path=args.video_path, start_t=t0, stop_t=t1, img_size=img_size, model_cfg=teacher_cfg, ckpt_path=CKPT_PATH, device=device, save_result=True)

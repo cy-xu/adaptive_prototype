@@ -7,6 +7,7 @@ runs
 examples
 core
 datasets
+debug
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

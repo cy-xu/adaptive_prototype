@@ -156,16 +156,12 @@ class COCODataset(Dataset):
         # load annotations for each image of COCO
         for imgId in tqdm(self.coco.getImgIds(), desc="Prepare images, annotations ... "):
 
+            # debug
+            # if len(self.data) > 100:
+            #     continue
+
             ann_ids = self.coco.getAnnIds(imgIds=imgId, iscrowd=False) # annotation ids
             img = self.coco.loadImgs(imgId)[0] # load img
-
-            # CY: some grayscale images in COCO can cause problem, skip them
-            imgPath = f"{self.root_path}/{self.data_version}/{imgId:012d}.jpg"
-            # open the image with Pillow and check if it is grayscale
-            with Image.open(imgPath) as im:
-                if im.mode == 'L':
-                    print(f"{imgId} is grayscale, convert to RGB...")
-                    continue
 
             if self.use_gt_bboxes:
                 objs = self.coco.loadAnns(ann_ids)
@@ -181,7 +177,13 @@ class COCODataset(Dataset):
                     if max(obj['keypoints']) == 0:
                         continue
 
+                    # count non-zeros in the keypoints, if it is less than 6, skip the image
+                    if sum(np.array(obj['keypoints']) > 0) < 6:
+                        continue
+
                     x, y, w, h = obj['bbox']
+                    # in COCO dataset, x,y in bbox are the center of the bbox
+
                     x1 = np.max((0, x))
                     y1 = np.max((0, y))
                     x2 = np.min((img['width'] - 1, x1 + np.max((0, w - 1))))
@@ -242,7 +244,7 @@ class COCODataset(Dataset):
                 })
 
         # Done check if we need prepare_data -> We should not
-        print('\nCOCO dataset loaded!')
+        # print('\nCOCO dataset loaded!')
 
         # Default values
         self.bbox_thre = 1.0
@@ -260,11 +262,14 @@ class COCODataset(Dataset):
         # Load image
         try:
             image = np.array(Image.open(joints_data['imgPath']))
+            # if image is grayscale, convert it to RGB with Pillow
+            if len(image.shape) == 2:
+                image = np.array(Image.fromarray(image).convert('RGB'))
         except:
             raise ValueError(f"Fail to read {joints_data['imgPath']}")
 
-        joints = joints_data['joints']
-        joints_vis = joints_data['joints_visibility']
+        joints = joints_data['joints'].copy()
+        joints_vis = joints_data['joints_visibility'].copy()
 
         c = joints_data['center']
         s = joints_data['scale']
@@ -272,40 +277,35 @@ class COCODataset(Dataset):
         r = 0
 
         # Apply data augmentation
-        if self.is_train:
+        # if self.is_train:
 
             # ToDo: consider no augmentation in early stages of adaptive learning
 
-            if self.half_body_prob and random.random() < self.half_body_prob and np.sum(joints_vis[:, 0]) > self.num_joints_half_body:
-                c_half_body, s_half_body = self._half_body_transform(joints, joints_vis)
+            # if self.half_body_prob and random.random() < self.half_body_prob and np.sum(joints_vis[:, 0]) > self.num_joints_half_body:
+            #     c_half_body, s_half_body = self._half_body_transform(joints, joints_vis)
 
-                if c_half_body is not None and s_half_body is not None:
-                    c, s = c_half_body, s_half_body
+            #     if c_half_body is not None and s_half_body is not None:
+            #         c, s = c_half_body, s_half_body
 
-            sf = self.scale_factor
-            rf = self.rotation_factor
+        #     sf = self.scale_factor
+        #     rf = self.rotation_factor
 
-            if self.scale:
-                s = s * np.clip(random.random() * sf + 1, 1 - sf, 1 + sf)  # A random scale factor in [1 - sf, 1 + sf]
+        #     if self.scale:
+        #         s = s * np.clip(random.random() * sf + 1, 1 - sf, 1 + sf)  # A random scale factor in [1 - sf, 1 + sf]
 
-            if self.rotate_prob and random.random() < self.rotate_prob:
-                r = np.clip(random.random() * rf, -rf * 2, rf * 2)  # A random rotation factor in [-2 * rf, 2 * rf]
-            else:
-                r = 0
+        #     if self.rotate_prob and random.random() < self.rotate_prob:
+        #         r = np.clip(random.random() * rf, -rf * 2, rf * 2)  # A random rotation factor in [-2 * rf, 2 * rf]
+        #     else:
+        #         r = 0
 
-            if self.flip_prob and random.random() < self.flip_prob:
-                image = image[:, ::-1, :]
-                joints, joints_vis = fliplr_joints(joints, joints_vis, image.shape[1], self.flip_pairs)
-                c[0] = image.shape[1] - c[0] - 1
+        #     if self.flip_prob and random.random() < self.flip_prob:
+        #         image = image[:, ::-1, :]
+        #         joints, joints_vis = fliplr_joints(joints, joints_vis, image.shape[1], self.flip_pairs)
+        #         c[0] = image.shape[1] - c[0] - 1
 
-        # Apply affine transform on joints and image
+        # # Apply affine transform on joints and image
         trans = get_affine_transform(c, s, self.pixel_std, r, self.image_size)
-        image = cv2.warpAffine(
-            image,
-            trans,
-            (int(self.image_size[0]), int(self.image_size[1])),
-            flags=cv2.INTER_LINEAR
-        )
+        image = cv2.warpAffine(image, trans, (int(self.image_size[0]), int(self.image_size[1])), flags=cv2.INTER_LINEAR)
 
         for i in range(self.num_joints):
             if joints_vis[i, 0] > 0.:
@@ -313,7 +313,7 @@ class COCODataset(Dataset):
 
         # Convert image to tensor and normalize
         if self.transform is not None:  # I could remove this check
-            image = self.transform(image)
+            image_tensor = self.transform(image)
 
         target, target_weight = self._generate_target(joints, joints_vis)
 
@@ -325,7 +325,7 @@ class COCODataset(Dataset):
         joints_data['rotation'] = r
         joints_data['score'] = score
 
-        return image, target.astype(np.float32), target_weight.astype(np.float32), joints_data
+        return image, image_tensor, target.astype(np.float32), target_weight.astype(np.float32), joints_data
 
 
     # Private methods
