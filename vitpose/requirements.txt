@@ -12,3 +12,4 @@ tensorboard
 json_tricks
 pycocotools
 tqdm
+torch_tb_profiler

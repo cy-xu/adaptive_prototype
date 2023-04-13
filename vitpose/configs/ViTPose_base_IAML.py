@@ -8,11 +8,13 @@ seed = 0
 deterministic = True
 
 # data_root = 'datasets/camera_dataset'
-data_root = 'datasets/coco'
+# data_root = 'datasets/coco'
+data_root = 'datasets/vertical_baby_shark'
+
 data_version = "val2017"
 data_json = f"{data_root}/annotations/person_keypoints_{data_version}.json"
 
-checkpoint = f"{data_root}/vitpose-b-camera.pth"
+checkpoint = "./vitpose-b.pth"
 total_epochs = 1000
 target_type = 'GaussianHeatmap'
 
@@ -161,7 +163,7 @@ data = dict(
     test_dataloader=dict(samples_per_gpu=32),
     train=dict(
         type='TopDownCocoDataset',
-        ann_file=f'{data_root}/annotations/dataset.json',
+        ann_file=f'{data_root}/annotations/person_keypoints_val2017.json',
         img_prefix=f'{data_root}/val2017/',
         data_cfg=data_cfg,
         pipeline=train_pipeline),
